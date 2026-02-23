@@ -5,9 +5,21 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class PersistenciaCSV implements IPersistenciaTexto{
+/**
+ * Implementación de persistencia basada en archivos CSV.
+ * Permite listar archivos, guardar líneas y leer contenido
+ * desde el sistema de archivos.
+ */
+public class PersistenciaCSV implements IPersistenciaTexto {
 
-
+    /**
+     * Lista los archivos en una ruta específica que coincidan
+     * con la extensión indicada.
+     *
+     * @param ruta Ruta donde se buscarán los archivos.
+     * @param extension Extensión a filtrar (ejemplo: ".csv").
+     * @return Lista de nombres de archivos encontrados.
+     */
     @Override
     public List<String> listarArchivosEnRuta(String ruta, String extension) {
         File carpeta = new File(ruta);
@@ -17,6 +29,14 @@ public class PersistenciaCSV implements IPersistenciaTexto{
         return (lista == null) ? new ArrayList<>() : Arrays.asList(lista);
     }
 
+    /**
+     * Guarda una línea de texto en el archivo especificado.
+     * Si el archivo o carpeta no existen, los crea.
+     *
+     * @param ruta Ruta del archivo.
+     * @param linea Contenido a escribir.
+     * @throws IOException Si ocurre un error de escritura.
+     */
     @Override
     public void guardarLinea(String ruta, String linea) throws IOException {
 
@@ -35,6 +55,13 @@ public class PersistenciaCSV implements IPersistenciaTexto{
         }
     }
 
+    /**
+     * Lee todas las líneas de un archivo especificado.
+     *
+     * @param ruta Ruta del archivo.
+     * @return Lista de líneas leídas.
+     * @throws IOException Si ocurre un error de lectura.
+     */
     @Override
     public List<String> leerLineas(String ruta) throws IOException {
 

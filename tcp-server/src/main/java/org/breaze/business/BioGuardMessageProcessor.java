@@ -1,9 +1,15 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
 import org.breaze.excepciones.PacienteDuplicadoException;
 
 import java.util.List;
 
+/**
+ * Procesador principal de mensajes del sistema BioGuard.
+ * Se encarga de interpretar la acción solicitada y delegar
+ * la ejecución a los servicios correspondientes.
+ */
 public class BioGuardMessageProcessor implements IMessageProcessor {
 
     private final IPacienteService pacienteService;
@@ -14,13 +20,24 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
     private final IBioGuardFactory factory; // Única interfaz de creación
     private final IPacienteReport pacienteReport;
 
+    /**
+     * Constructor que recibe todas las dependencias necesarias
+     * para el procesamiento de mensajes.
+     *
+     * @param pacienteService Servicio de gestión de pacientes.
+     * @param virusService Servicio de gestión de virus.
+     * @param muestraService Servicio de gestión de muestras.
+     * @param analizador Servicio encargado del análisis genético.
+     * @param factory Fábrica para la creación de entidades del dominio.
+     * @param pacienteReport Generador de reportes de pacientes.
+     */
     public BioGuardMessageProcessor(
             IPacienteService pacienteService,
             IVirusService virusService,
             IMuestraService muestraService,
             IAnalizadorGenetico analizador,
             IBioGuardFactory factory,
-            IPacienteReport pacienteReport) { // Inyectado
+            IPacienteReport pacienteReport) {
         this.pacienteService = pacienteService;
         this.virusService = virusService;
         this.muestraService = muestraService;
@@ -29,6 +46,13 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
         this.pacienteReport = pacienteReport;
     }
 
+    /**
+     * Procesa un mensaje en formato ACCION:DATOS
+     * y ejecuta la operación correspondiente.
+     *
+     * @param request Mensaje recibido.
+     * @return Resultado del procesamiento.
+     */
     @Override
     public String process(String request) {
         if (request == null || request.isEmpty()) return "[ERROR] Mensaje vacío";
@@ -63,23 +87,31 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
         }
     }
 
-    // --- MÉTODOS DE APOYO (Delegando responsabilidades) ---
-
+    /**
+     * Procesa el registro de un nuevo paciente.
+     *
+     * @param datos Datos del paciente.
+     * @return Resultado de la operación.
+     * @throws PacienteDuplicadoException Si el paciente ya existe.
+     */
     private String procesarRegistro(String datos) throws PacienteDuplicadoException {
-        // Delegamos la creación a la factory
         Paciente p = factory.crearPaciente(datos);
         pacienteService.registrarPaciente(p);
         return "[OK] Paciente registrado exitosamente.";
     }
 
+    /**
+     * Procesa el registro de un virus en formato FASTA.
+     *
+     * @param contenidoFasta Contenido del virus.
+     * @return Resultado de la operación.
+     */
     private String procesarRegistroVirus(String contenidoFasta) {
         try {
-            // La fábrica "entiende" el formato FASTA que el cliente envió
             Virus nuevoVirus = factory.crearVirus(contenidoFasta);
 
             if (nuevoVirus == null) return "[ERROR] Formato FASTA inválido";
 
-            // El servicio lo valida (ADN) y lo guarda en la carpeta del SERVIDOR
             virusService.registrarVirus(nuevoVirus);
 
             return "[OK] Virus '" + nuevoVirus.getNombre() + "' cargado y almacenado en el servidor.";
@@ -88,6 +120,12 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
         }
     }
 
+    /**
+     * Procesa la consulta de un paciente por documento.
+     *
+     * @param documento Documento del paciente.
+     * @return Información del paciente o mensaje de error.
+     */
     private String procesarConsulta(String documento) {
         Paciente p = pacienteService.buscarPaciente(documento);
         if (p == null) return "[ERROR] Paciente no encontrado";
@@ -95,24 +133,25 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
         return "[OK] " + p.toTextLine();
     }
 
+    /**
+     * Procesa el análisis de una muestra de ADN en formato FASTA.
+     *
+     * @param contenidoFasta Contenido de la muestra.
+     * @return Resultado del análisis.
+     */
     private String procesarAnalisis(String contenidoFasta) {
         try {
-            // 1. La Factory entiende el FASTA: ">123|2026-02-22\nATCG..."
             MuestraADN muestra = factory.crearMuestra(contenidoFasta);
 
-            // 2. El servicio guarda la muestra en carpetas por ID y valida ADN
             muestraService.registrarMuestras(muestra);
 
-            // 3. Obtenemos el catálogo de virus para comparar
             List<Virus> catalogo = virusService.cargarTodosLosVirus();
 
-            // 4. El Analizador Genético (Experto en algoritmos) busca coincidencias
             List<ResultadoDiagnostico> resultados = analizador.realizarDiagnostico(
                     muestra.getSecuencia(),
                     catalogo
             );
 
-            // 5. El servicio guarda el resultado en el CSV solicitado dentro de la carpeta del paciente
             muestraService.generarDiagnosticoCSV(muestra, resultados);
 
             return "[OK] Análisis completado. Diagnóstico generado en el servidor.";
@@ -121,7 +160,11 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
         }
     }
 
-
+    /**
+     * Genera el reporte de pacientes en riesgo.
+     *
+     * @return Reporte generado o mensaje de error.
+     */
     private String procesarReportePacientesRiesgo() {
         try {
             return pacienteReport.generarReporte();
@@ -130,13 +173,17 @@ public class BioGuardMessageProcessor implements IMessageProcessor {
         }
     }
 
+    /**
+     * Genera el reporte de mutaciones de un paciente específico.
+     *
+     * @param documento Documento del paciente.
+     * @return Reporte de mutaciones o mensaje de error.
+     */
     private String procesarMutaciones(String documento) {
-        // Validamos que el documento no sea nulo o vacío antes de procesar
         if (documento == null || documento.trim().isEmpty()) {
             return "[ERROR] El documento del paciente es obligatorio para el reporte.";
         }
 
-        // El servicio se encarga de buscar las muestras y comparar secuencias
         String reporte = muestraService.generarReporteMutaciones(documento);
 
         return (reporte != null && !reporte.isEmpty())

@@ -1,5 +1,7 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;

@@ -1,5 +1,7 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
+
 /**
  * Representa una muestra de ADN asociada a un paciente.
  *

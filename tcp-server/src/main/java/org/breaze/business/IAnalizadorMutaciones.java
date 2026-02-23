@@ -1,5 +1,7 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
+
 import java.util.List;
 
 public interface IAnalizadorMutaciones {

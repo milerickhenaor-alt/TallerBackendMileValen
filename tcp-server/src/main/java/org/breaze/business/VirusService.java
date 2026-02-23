@@ -1,5 +1,6 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
 import org.breaze.excepciones.VirusDuplicadoException;
 
 import java.io.IOException;

@@ -22,11 +22,20 @@ public class PacientesReport implements IPacienteReport {
     /**
      * Inyección de dependencias por constructor.
      * La clase no decide qué implementación usar.
+     *
+     * @param riskAnalyzer Analizador encargado de determinar el nivel de riesgo.
      */
     public PacientesReport(IPacienteRiskAnalyzer riskAnalyzer) {
         this.riskAnalyzer = riskAnalyzer;
     }
 
+    /**
+     * Genera el reporte de pacientes clasificados como de alto riesgo.
+     * Recorre las carpetas de muestras, analiza los virus detectados
+     * y genera un archivo CSV con los resultados.
+     *
+     * @return Cadena con el reporte generado o mensaje de estado.
+     */
     @Override
     public String generarReporte() {
         StringBuilder sb = new StringBuilder();
@@ -37,7 +46,6 @@ public class PacientesReport implements IPacienteReport {
         boolean huboPacientes = false;
         File carpetaBase = new File(CARPETA_MUESTRAS);
 
-        // Validación de existencia de datos
         if (!carpetaBase.exists() || !carpetaBase.isDirectory()) {
             return "[ERROR] No existe la carpeta de muestras en el servidor.";
         }
@@ -46,7 +54,6 @@ public class PacientesReport implements IPacienteReport {
                 new BufferedWriter(
                         new FileWriter(ARCHIVO_REPORTE)))) {
 
-            // 1. Escribir encabezado en el archivo físico
             out.println("Documento,total_virus,altamente_infecciosos,virus_normal_bajo,virus_altamente_infecciosos");
 
             File[] pacientes = carpetaBase.listFiles(File::isDirectory);
@@ -58,20 +65,16 @@ public class PacientesReport implements IPacienteReport {
                 String documento = carpetaPaciente.getName();
                 List<String> virusDetectados = obtenerVirusDetectados(carpetaPaciente);
 
-                // 2. Delegamos la lógica al analizador de riesgo
                 PacienteRiskResult resultado = riskAnalyzer.analizar(virusDetectados);
 
                 if (resultado.esAltoRiesgo()) {
                     huboPacientes = true;
 
-                    // 3. Alimentar el StringBuilder para la respuesta en tiempo real (Cliente)
                     sb.append(String.format("%-15s | %-10s | %-10s\n",
                             documento,
                             resultado.getTotalVirus(),
                             resultado.getAltamenteInfecciosos()));
 
-                    // 4. Escribir en el archivo CSV (Persistencia)
-                    // Usamos String.join con ";" para que las listas no rompan las columnas del CSV
                     out.println(
                             documento + "," +
                                     resultado.getTotalVirus() + "," +
@@ -86,14 +89,15 @@ public class PacientesReport implements IPacienteReport {
             return "[ERROR] Fallo al escribir el archivo de reporte: " + e.getMessage();
         }
 
-        // Retorno condicional basado en si se encontraron hallazgos
         return huboPacientes ? sb.toString() : "[OK] No se detectaron pacientes de alto riesgo.";
     }
 
     /**
-     * Método privado auxiliar.
-     * Solo se encarga de leer archivos y extraer nombres de virus.
-     * No contiene lógica de negocio.
+     * Obtiene la lista de virus detectados para un paciente
+     * leyendo los archivos de diagnóstico almacenados.
+     *
+     * @param carpetaPaciente Carpeta correspondiente al paciente.
+     * @return Lista de nombres de virus detectados.
      */
     private List<String> obtenerVirusDetectados(File carpetaPaciente) {
 

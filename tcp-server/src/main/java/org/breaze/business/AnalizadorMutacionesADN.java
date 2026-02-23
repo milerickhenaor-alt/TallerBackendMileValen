@@ -1,10 +1,23 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
+
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Implementación encargada de validar secuencias de ADN
+ * y detectar mutaciones entre una secuencia actual y una anterior.
+ */
 public class AnalizadorMutacionesADN implements IAnalizadorMutaciones {
 
+    /**
+     * Valida que la secuencia de ADN no sea nula, esté vacía
+     * y que solo contenga caracteres válidos (A, T, G, C).
+     *
+     * @param adn Secuencia de ADN a validar.
+     * @throws FormatoSecuenciaInvalidoException Si la secuencia es inválida.
+     */
     @Override
     public void validarFormato(String adn) throws FormatoSecuenciaInvalidoException {
         if (adn == null || adn.isEmpty()) {
@@ -22,6 +35,14 @@ public class AnalizadorMutacionesADN implements IAnalizadorMutaciones {
         }
     }
 
+    /**
+     * Detecta las diferencias entre dos secuencias de ADN
+     * y devuelve los rangos de posiciones donde existen mutaciones.
+     *
+     * @param actual Secuencia actual de ADN.
+     * @param anterior Secuencia anterior de ADN.
+     * @return Lista de rangos en formato texto donde se detectaron mutaciones.
+     */
     @Override
     public List<String> detectarMutaciones(String actual, String anterior) {
         List<String> rangos = new ArrayList<>();
@@ -60,9 +81,16 @@ public class AnalizadorMutacionesADN implements IAnalizadorMutaciones {
         return rangos;
     }
 
+    /**
+     * Formatea un rango de posiciones de mutación.
+     * Si inicio y fin son iguales, devuelve una sola posición.
+     * Si son diferentes, devuelve un rango en formato inicio-fin.
+     *
+     * @param inicio Posición inicial del rango.
+     * @param fin Posición final del rango.
+     * @return Rango formateado como texto.
+     */
     private String formatearRango(int inicio, int fin) {
-        // Si el inicio y el fin son iguales, devolvemos solo un número (ej: "3")
-        // Si son diferentes, devolvemos el rango (ej: "4-6")
         return (inicio == fin) ? String.valueOf(inicio) : inicio + "-" + fin;
     }
 }

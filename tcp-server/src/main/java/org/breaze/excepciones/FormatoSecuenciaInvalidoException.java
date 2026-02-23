@@ -1,4 +1,4 @@
-package org.breaze.business;
+package org.breaze.excepciones;
 
 /**
  * Excepción personalizada que se lanza cuando

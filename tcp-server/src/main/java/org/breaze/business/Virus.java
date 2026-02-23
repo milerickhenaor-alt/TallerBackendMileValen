@@ -1,5 +1,7 @@
 package org.breaze.business;
 
+import org.breaze.excepciones.FormatoSecuenciaInvalidoException;
+
 /**
  * Representa un virus dentro del sistema.
  *

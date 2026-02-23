@@ -1,13 +1,30 @@
 package org.breaze.business;
 
+/**
+ * Fábrica encargada de centralizar la creación de objetos
+ * relacionados con el dominio BioGuard como Paciente, Virus y MuestraADN.
+ */
 public class BioGuardFactory implements IBioGuardFactory {
 
+    /**
+     * Crea una instancia de Paciente a partir de los datos proporcionados.
+     *
+     * @param datos Información necesaria para crear el paciente.
+     * @return Nueva instancia de Paciente.
+     */
     @Override
     public Paciente crearPaciente(String datos) {
         // Centralizamos la lógica de instanciación
         return new Paciente(datos);
     }
 
+    /**
+     * Crea una instancia de Virus a partir de una cadena en formato FASTA.
+     * El encabezado debe contener el nombre y el nivel separados por '|'.
+     *
+     * @param datosFasta Datos del virus en formato FASTA.
+     * @return Nueva instancia de Virus o null si el formato es inválido.
+     */
     @Override
     public Virus crearVirus(String datosFasta) {
         String[] lineas = datosFasta.split("\n");
@@ -23,6 +40,14 @@ public class BioGuardFactory implements IBioGuardFactory {
         return null;
     }
 
+    /**
+     * Crea una instancia de MuestraADN a partir de una cadena en formato FASTA.
+     * El encabezado debe contener el documento y la fecha separados por '|'.
+     *
+     * @param datosFasta Datos de la muestra en formato FASTA.
+     * @return Nueva instancia de MuestraADN.
+     * @throws IllegalArgumentException Si el formato FASTA es inválido.
+     */
     @Override
     public MuestraADN crearMuestra(String datosFasta) {
         // 1. Dividir el mensaje para separar encabezado de secuencia
