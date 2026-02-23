@@ -8,7 +8,7 @@ import java.util.List;
  * Trabaja únicamente con cadenas de texto (String),
  * lo que facilita la lectura y análisis de archivos de ADN.
  */
-public class AnalizadorGenetico {
+public class AnalizadorGenetico implements IAnalizadorGenetico{
 
     /**
      * Realiza el diagnóstico comparando la secuencia de ADN
@@ -18,6 +18,8 @@ public class AnalizadorGenetico {
      * @param catalogoVirus Lista de virus registrados en el sistema
      * @return Lista de coincidencias encontradas en el ADN
      */
+
+    @Override
     public List<ResultadoDiagnostico> realizarDiagnostico(String secuenciaADN, List<Virus> catalogoVirus) {
 
         // Lista donde se guardarán los resultados encontrados

@@ -1,5 +1,7 @@
 package org.breaze.business;
 
+import java.util.List;
+
 /**
  * Interfaz que define las operaciones relacionadas
  * con las muestras de ADN.
@@ -16,5 +18,7 @@ public interface IMuestraService {
      * @return true si el registro fue exitoso, false en caso contrario
      */
     boolean registrarMuestras(MuestraADN m);
+    void generarDiagnosticoCSV(  MuestraADN muestra, List<ResultadoDiagnostico> resultados);
+    String generarReporteMutaciones(String documento);
 
 }

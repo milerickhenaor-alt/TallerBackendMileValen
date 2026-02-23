@@ -1,174 +1,147 @@
 package org.breaze.business;
 
-import org.breaze.common.Paciente;
+import org.breaze.excepciones.PacienteDuplicadoException;
+
 import java.util.List;
 
-/**
- * Clase que se encarga de recibir y procesar los mensajes
- * enviados por el cliente.
- *
- * El mensaje debe tener el formato:
- *
- *     ACCION:DATOS
- *
- * Según la acción recibida, se llama al servicio correspondiente
- * para ejecutar la operación.
- */
 public class BioGuardMessageProcessor implements IMessageProcessor {
 
-    // Servicios principales del sistema
-    private final PacienteService pacienteService = new PacienteService();
-    private final VirusService virusService = new VirusService();
-    private final MuestraService muestraService = new MuestraService();
-    private final AnalizadorGenetico analizador = new AnalizadorGenetico();
+    private final IPacienteService pacienteService;
+    private final IVirusService virusService;
+    private final IMuestraService muestraService;
+    private final IAnalizadorGenetico analizador;
 
-    /**
-     * Procesa el mensaje recibido desde el cliente.
-     *
-     * @param request mensaje con el formato ACCION:DATOS
-     * @return respuesta generada por el sistema
-     */
+    private final IBioGuardFactory factory; // Única interfaz de creación
+    private final IPacienteReport pacienteReport;
+
+    public BioGuardMessageProcessor(
+            IPacienteService pacienteService,
+            IVirusService virusService,
+            IMuestraService muestraService,
+            IAnalizadorGenetico analizador,
+            IBioGuardFactory factory,
+            IPacienteReport pacienteReport) { // Inyectado
+        this.pacienteService = pacienteService;
+        this.virusService = virusService;
+        this.muestraService = muestraService;
+        this.analizador = analizador;
+        this.factory = factory;
+        this.pacienteReport = pacienteReport;
+    }
+
     @Override
     public String process(String request) {
+        if (request == null || request.isEmpty()) return "[ERROR] Mensaje vacío";
+
+        String[] partes = request.split(":", 2);
+        if (partes.length < 2) return "[ERROR] Formato inválido. Use ACCION:DATOS";
+
+        String accion = partes[0];
+        String datos = partes[1];
 
         try {
-
-            // Si el mensaje está vacío
-            if (request == null || request.isEmpty()) {
-                return "[ERROR] Mensaje vacío";
-            }
-
-            // Separar acción y datos
-            String[] partes = request.split(":", 2);
-
-            if (partes.length < 2) {
-                return "[ERROR] Formato inválido. Use ACCION:DATOS";
-            }
-
-            String accion = partes[0];
-            String datos = partes[1];
-
-            // Ejecutar según la acción recibida
             switch (accion) {
-
                 case "REGISTRAR_PACIENTE":
                     return procesarRegistro(datos);
-
                 case "CONSULTAR_PACIENTE":
                     return procesarConsulta(datos);
-
                 case "REGISTRAR_VIRUS":
                     return procesarRegistroVirus(datos);
-
                 case "ANALIZAR_ADN":
                     return procesarAnalisis(datos);
-
                 case "REPORTE_PACIENTES":
-                    return procesarReporte();
-
+                    return procesarReportePacientesRiesgo();
                 case "REPORTE_MUTACIONES":
                     return procesarMutaciones(datos);
-
                 default:
                     return "[ERROR] Acción no reconocida";
             }
+        } catch (PacienteDuplicadoException | FormatoSecuenciaInvalidoException e) {
+            return "[ERROR] Negocio: " + e.getMessage();
+        } catch (Exception e) {
+            return "[ERROR] Sistema: " + e.getMessage();
+        }
+    }
 
+    // --- MÉTODOS DE APOYO (Delegando responsabilidades) ---
+
+    private String procesarRegistro(String datos) throws PacienteDuplicadoException {
+        // Delegamos la creación a la factory
+        Paciente p = factory.crearPaciente(datos);
+        pacienteService.registrarPaciente(p);
+        return "[OK] Paciente registrado exitosamente.";
+    }
+
+    private String procesarRegistroVirus(String contenidoFasta) {
+        try {
+            // La fábrica "entiende" el formato FASTA que el cliente envió
+            Virus nuevoVirus = factory.crearVirus(contenidoFasta);
+
+            if (nuevoVirus == null) return "[ERROR] Formato FASTA inválido";
+
+            // El servicio lo valida (ADN) y lo guarda en la carpeta del SERVIDOR
+            virusService.registrarVirus(nuevoVirus);
+
+            return "[OK] Virus '" + nuevoVirus.getNombre() + "' cargado y almacenado en el servidor.";
         } catch (Exception e) {
             return "[ERROR] " + e.getMessage();
         }
     }
 
-    /**
-     * Consulta un paciente por su documento.
-     */
     private String procesarConsulta(String documento) {
-
         Paciente p = pacienteService.buscarPaciente(documento);
-
-        if (p == null) {
-            return "[ERROR] Paciente no encontrado";
-        }
+        if (p == null) return "[ERROR] Paciente no encontrado";
 
         return "[OK] " + p.toTextLine();
     }
 
-    /**
-     * Registra un nuevo paciente.
-     */
-    private String procesarRegistro(String datos)
-            throws PacienteDuplicadoException {
+    private String procesarAnalisis(String contenidoFasta) {
+        try {
+            // 1. La Factory entiende el FASTA: ">123|2026-02-22\nATCG..."
+            MuestraADN muestra = factory.crearMuestra(contenidoFasta);
 
-        Paciente paciente = new Paciente(datos);
-        pacienteService.registrarPaciente(paciente);
+            // 2. El servicio guarda la muestra en carpetas por ID y valida ADN
+            muestraService.registrarMuestras(muestra);
 
-        return "Paciente registrado exitosamente.";
+            // 3. Obtenemos el catálogo de virus para comparar
+            List<Virus> catalogo = virusService.cargarTodosLosVirus();
+
+            // 4. El Analizador Genético (Experto en algoritmos) busca coincidencias
+            List<ResultadoDiagnostico> resultados = analizador.realizarDiagnostico(
+                    muestra.getSecuencia(),
+                    catalogo
+            );
+
+            // 5. El servicio guarda el resultado en el CSV solicitado dentro de la carpeta del paciente
+            muestraService.generarDiagnosticoCSV(muestra, resultados);
+
+            return "[OK] Análisis completado. Diagnóstico generado en el servidor.";
+        } catch (Exception e) {
+            return "[ERROR] " + e.getMessage();
+        }
     }
 
-    /**
-     * Registra un virus en el sistema.
-     */
-    private String procesarRegistroVirus(String datos)
-            throws FormatoSecuenciaInvalidoException {
 
-        Virus virus = new Virus(datos);
-        boolean ok = virusService.registrarVirus(virus);
-
-        return ok ? "[OK] Virus registrado"
-                : "[ERROR] Formato inválido";
+    private String procesarReportePacientesRiesgo() {
+        try {
+            return pacienteReport.generarReporte();
+        } catch (Exception e) {
+            return "[ERROR] Sistema: " + e.getMessage();
+        }
     }
 
-    /**
-     * Analiza una muestra de ADN y genera un informe.
-     */
-    private String procesarAnalisis(String datos) {
-
-        MuestraADN muestra = new MuestraADN(datos);
-
-        // Guardar muestra
-        muestraService.registrarMuestras(muestra);
-
-        // Cargar virus
-        List<Virus> catalogo = virusService.cargarTodosLosVirus();
-
-        // Analizar ADN
-        List<ResultadoDiagnostico> resultados =
-                analizador.realizarDiagnostico(
-                        muestra.getSecuencia(),
-                        catalogo
-                );
-
-        // Generar archivo CSV
-        muestraService.generarDiagnosticoCSV(muestra, resultados);
-
-        // Crear informe en texto
-        StringBuilder informe = new StringBuilder();
-        informe.append("--- INFORME MÉDICO ---\n");
-        informe.append("Virus encontrados: ")
-                .append(resultados.size())
-                .append("\n");
-
-        for (ResultadoDiagnostico r : resultados) {
-            informe.append(r.toString()).append("\n");
+    private String procesarMutaciones(String documento) {
+        // Validamos que el documento no sea nulo o vacío antes de procesar
+        if (documento == null || documento.trim().isEmpty()) {
+            return "[ERROR] El documento del paciente es obligatorio para el reporte.";
         }
 
-        return informe.toString();
+        // El servicio se encarga de buscar las muestras y comparar secuencias
+        String reporte = muestraService.generarReporteMutaciones(documento);
+
+        return (reporte != null && !reporte.isEmpty())
+                ? reporte
+                : "[ERROR] No se encontraron muestras o mutaciones para el paciente: " + documento;
     }
 
-    /**
-     * Genera el reporte general de pacientes.
-     */
-    private String procesarReporte() {
-
-        PacientesReport pacientesReport = new PacientesReport();
-        pacientesReport.generarReporte();
-
-        return "El reporte se generó exitosamente.";
-    }
-
-    /**
-     * Genera el reporte de mutaciones de un paciente.
-     */
-    private String procesarMutaciones(String documento) {
-        return muestraService.generarReporteMutaciones(documento);
-    }
 }

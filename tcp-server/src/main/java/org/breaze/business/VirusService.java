@@ -1,163 +1,77 @@
 package org.breaze.business;
 
-import java.io.*;
+import org.breaze.excepciones.VirusDuplicadoException;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Servicio encargado de gestionar los virus del sistema.
- *
- * Los virus se guardan en archivos individuales dentro de:
- * data/virus/
- *
- * Cada virus se almacena en formato FASTA.
- */
-public class VirusService {
+public class VirusService implements IVirusService {
 
-    /** Carpeta donde se guardan los archivos de virus */
+    private final IPersistenciaTexto persistencia;
+    private final IAnalizadorMutaciones analizador;
     private static final String CARPETA = "data/virus/";
 
-    /**
-     * Registra un nuevo virus en el sistema.
-     *
-     * - Verifica que no exista otro virus con el mismo nombre.
-     * - Valida que la secuencia solo contenga A, T, G y C.
-     * - Guarda el virus en formato FASTA.
-     *
-     * @param virus virus a registrar
-     * @return true si se guardó correctamente, false si ocurrió un error
-     * @throws VirusDuplicadoException si el virus ya existe
-     * @throws FormatoSecuenciaInvalidoException si la secuencia es inválida
-     */
-    public boolean registrarVirus(Virus virus)
-            throws VirusDuplicadoException, FormatoSecuenciaInvalidoException {
+    public VirusService(IPersistenciaTexto persistencia, IAnalizadorMutaciones analizador) {
+        this.persistencia = persistencia;
+        this.analizador = analizador;
+    }
 
-        // Verificar duplicado
-        if (buscarVirus(virus.getNombre()) != null) {
-            throw new VirusDuplicadoException("Virus ya existe");
-        }
+    @Override
+    public boolean registrarVirus(Virus virus) throws VirusDuplicadoException, FormatoSecuenciaInvalidoException {
+        // 1. Validar ADN (bucle manual en Analizador)
+        analizador.validarFormato(virus.getSecuencia());
 
-        // Validar secuencia
-        if (virus.getSecuencia() != null &&
-                !virus.getSecuencia().isEmpty() &&
-                !virus.getSecuencia().matches("[ATGC]+")) {
+        // 2. Ruta interna del servidor (donde se almacenará permanentemente)
+        String rutaServidor = "data/virus/" + virus.getNombre() + ".fasta";
 
-            throw new FormatoSecuenciaInvalidoException(
-                    "La secuencia solo puede contener A, T, G y C."
-            );
-        }
+        // 3. Reconstruir el formato para guardarlo localmente en el servidor
+        String contenidoParaGuardar = ">" + virus.getNombre() + "|" + virus.getNivelInfecciosidad() + "\n"
+                + virus.getSecuencia();
 
         try {
-            File archivo = new File(CARPETA + virus.getNombre() + ".fasta");
-            File carpeta = archivo.getParentFile();
-
-            // Crear carpeta si no existe
-            if (carpeta != null && !carpeta.exists()) {
-                carpeta.mkdirs();
-            }
-
-            // Guardar en formato FASTA
-            try (FileWriter fw = new FileWriter(archivo);
-                 BufferedWriter bw = new BufferedWriter(fw);
-                 PrintWriter out = new PrintWriter(bw)) {
-
-                out.println(">" + virus.getNombre() + "|" + virus.getNivelInfecciosidad());
-                out.println(virus.getSecuencia());
-
-                return true;
-            }
-
+            // Guardamos en el disco del servidor usando la PersistenciaFASTA
+            persistencia.guardarLinea(rutaServidor, contenidoParaGuardar);
+            return true;
         } catch (IOException e) {
-            e.printStackTrace();
             return false;
         }
     }
 
-    /**
-     * Busca un virus por su nombre.
-     *
-     * @param nombre nombre del virus
-     * @return el virus encontrado o null si no existe
-     */
+    @Override
     public Virus buscarVirus(String nombre) {
+        String ruta = CARPETA + nombre + ".fasta";
+        try {
+            List<String> lineas = persistencia.leerLineas(ruta);
 
-        File archivo = new File(CARPETA + nombre + ".fasta");
+            if (lineas.size() >= 2) {
+                String header = lineas.get(0);
+                String secuencia = lineas.get(1);
 
-        if (!archivo.exists()) {
+                if (header.startsWith(">")) {
+                    String datos = header.substring(1);
+                    String[] partes = datos.split("\\|");
+                    return new Virus(partes[0], partes[1], secuencia);
+                }
+            }
+        } catch (IOException e) {
             return null;
         }
-
-        try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
-
-            String header = br.readLine();
-            String secuencia = br.readLine();
-
-            if (header != null && header.startsWith(">")) {
-
-                String datos = header.substring(1); // quitar >
-                String[] partes = datos.split("\\|");
-
-                String nombreVirus = partes[0];
-                String nivel = partes[1];
-
-                return new Virus(nombreVirus, nivel, secuencia);
-            }
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
         return null;
     }
 
-    /**
-     * Carga todos los virus registrados en el sistema.
-     *
-     * Recorre la carpeta de virus y reconstruye cada uno
-     * leyendo su archivo FASTA.
-     *
-     * @return lista con todos los virus encontrados
-     */
+    @Override
     public List<Virus> cargarTodosLosVirus() {
-
         List<Virus> lista = new ArrayList<>();
 
-        File carpeta = new File(CARPETA);
+        // Usamos el método de la persistencia para listar
+        List<String> nombresArchivos = persistencia.listarArchivosEnRuta(CARPETA, ".fasta");
 
-        if (!carpeta.exists()) {
-            return lista;
-        }
-
-        File[] archivos = carpeta.listFiles((dir, name) -> name.endsWith(".fasta"));
-
-        if (archivos == null) {
-            return lista;
-        }
-
-        for (File archivo : archivos) {
-
-            try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
-
-                String header = br.readLine();
-                String secuencia = br.readLine();
-
-                if (header != null && header.startsWith(">")) {
-
-                    String datos = header.substring(1);
-                    String[] partes = datos.split("\\|");
-
-                    if (partes.length >= 2) {
-
-                        String nombre = partes[0];
-                        String nivel = partes[1];
-
-                        lista.add(new Virus(nombre, nivel, secuencia));
-                    }
-                }
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        for (String nombreArchivo : nombresArchivos) {
+            // "nombreArchivo" trae "Ebola.fasta", quitamos la extensión para buscarlo
+            String nombreVirus = nombreArchivo.replace(".fasta", "");
+            Virus v = buscarVirus(nombreVirus);
+            if (v != null) lista.add(v);
         }
 
         return lista;

@@ -1,6 +1,6 @@
 package org.breaze.business;
 
-import org.breaze.common.Paciente;
+import org.breaze.excepciones.PacienteDuplicadoException;
 
 /**
  * Interfaz que define las operaciones relacionadas

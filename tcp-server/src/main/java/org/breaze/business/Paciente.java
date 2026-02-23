@@ -1,4 +1,4 @@
-package org.breaze.common;
+package org.breaze.business;
 
 /**
  * Representa un paciente del sistema.

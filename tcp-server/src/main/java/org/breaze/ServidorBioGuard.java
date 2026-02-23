@@ -1,43 +1,61 @@
 package org.breaze;
 
-import org.breaze.business.BioGuardMessageProcessor;
-import org.breaze.business.IMessageProcessor;
-import org.breaze.common.IConfigReader;
-import org.breaze.common.PropertiesManager;
-import org.breaze.network.INetworkService;
-import org.breaze.network.ISSLConfig;
-import org.breaze.network.TCPConfig;
-import org.breaze.network.SSLTCPServer;
+import org.breaze.business.*;
+import org.breaze.common.*;
+import org.breaze.network.*;
 
-/**
- * Clase principal que inicia el servidor BioGuard.
- *
- * Se encarga de:
- * 1. Cargar la configuración desde application.properties.
- * 2. Crear la configuración SSL/TCP.
- * 3. Inicializar el procesador de mensajes.
- * 4. Levantar el servidor seguro.
- */
 public class ServidorBioGuard {
 
-    /**
-     * Punto de entrada del sistema.
-     *
-     * @param args argumentos de línea de comandos
-     */
     public static void main(String[] args) {
+        System.out.println("=== SISTEMA BIOGUARD v2.0 - 2026 ===");
 
-        // Cargar configuración
-        IConfigReader reader = new PropertiesManager("application.properties");
+        try {
+            // 1. INFRAESTRUCTURA
+            IConfigReader reader = new PropertiesManager("application.properties");
+            ISSLConfig tcpConfig = new TCPConfig(reader);
 
-        // Configurar parámetros SSL/TCP
-        ISSLConfig tcpConfig = new TCPConfig(reader);
+            // 2. PERSISTENCIA
+            IPersistenciaTexto persistenciaCsv = new PersistenciaCSV();
+            IPersistenciaTexto persistenciaFasta = new PersistenciaFASTA();
 
-        // Crear procesador de mensajes del sistema
-        IMessageProcessor processor = new BioGuardMessageProcessor();
+            // 3. COMPONENTES LÓGICOS Y FÁBRICAS
+            IAnalizadorMutaciones analizadorMutaciones = new AnalizadorMutacionesADN();
+            IAnalizadorGenetico analizadorGenetico = new AnalizadorGenetico();
+            IBioGuardFactory factory = new BioGuardFactory();
 
-        // Crear e iniciar servidor seguro
-        INetworkService server = new SSLTCPServer(tcpConfig, processor);
-        server.start();
+            // 4. SERVICIOS DE NEGOCIO
+            IPacienteService pacienteService = new PacienteService(persistenciaCsv);
+            // El VirusService es necesario para el RiskAnalyzer más adelante
+            VirusService virusService = new VirusService(persistenciaFasta, analizadorMutaciones);
+            IMuestraService muestraService = new MuestraService(persistenciaFasta, analizadorMutaciones);
+
+            // 5. COMPONENTES DE REPORTE (Siguiendo el grafo de dependencias)
+            // Primero el Analyzer de riesgo, que depende del servicio de virus
+            IPacienteRiskAnalyzer riskAnalyzer = new PacienteRiskAnalyzer(virusService);
+
+            // Luego el generador de reportes, que depende del Analyzer
+            IPacienteReport report = new PacientesReport(riskAnalyzer);
+
+            // 6. PROCESADOR DE MENSAJES (Orquestador final)
+            // Inyectamos todas las dependencias necesarias, incluido el nuevo reporte
+            IMessageProcessor processor = new BioGuardMessageProcessor(
+                    pacienteService,
+                    virusService,
+                    muestraService,
+                    analizadorGenetico,
+                    factory,
+                    report // Inyectamos la interfaz del reporte aquí
+            );
+
+            // 7. LANZAMIENTO
+            INetworkService server = new SSLTCPServer(tcpConfig, processor);
+
+            System.out.println("[INFO] Servidor listo y escuchando peticiones...");
+            server.start();
+
+        } catch (Exception e) {
+            System.err.println("[FATAL] Error crítico al iniciar el sistema: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

@@ -1,173 +1,120 @@
 package org.breaze.business;
 
-import java.io.*;
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
+/**
+ * Servicio encargado de la gestión de muestras de ADN.
+ * Cumple con SRP al delegar la lógica de análisis y reporte a componentes especializados.
+ */
 public class MuestraService implements IMuestraService {
 
+    private final IPersistenciaTexto persistencia;
+    private final IAnalizadorMutaciones analizadorMutaciones;
+    private final ReporteMutacionesBasico reporteGenerator;
     private static final String CARPETA_BASE = "data/muestras/";
+
+    public MuestraService(IPersistenciaTexto persistencia, IAnalizadorMutaciones analizador) {
+        this.persistencia = persistencia;
+        this.analizadorMutaciones = analizador;
+        this.reporteGenerator = new ReporteMutacionesBasico();
+    }
 
     @Override
     public boolean registrarMuestras(MuestraADN muestra) throws FormatoSecuenciaInvalidoException {
-        if(muestra.getSecuencia() != null && !muestra.getSecuencia().isEmpty() && !muestra.getSecuencia().matches("[ATGC]+")){
-            throw new FormatoSecuenciaInvalidoException(" \"La secuencia solo puede contener A, T, G y C.\"");
-        }
+        // 1. Validar ADN (Responsabilidad delegada al analizador manual)
+        analizadorMutaciones.validarFormato(muestra.getSecuencia());
+
+        // 2. Definir ruta: CARPETA_BASE/ID_PACIENTE/FECHA.fasta
+        // Esto cumple con: "organizar las muestras en carpetas individuales por paciente"
+        String directorioPaciente = CARPETA_BASE + muestra.getDocumentoPaciente() + "/";
+        String nombreArchivo = muestra.getFecha() + ".fasta";
+        String rutaCompleta = directorioPaciente + nombreArchivo;
 
         try {
-            File carpetaPaciente = new File(CARPETA_BASE + muestra.getDocumentoPaciente());
-            if (!carpetaPaciente.exists()) {
-                carpetaPaciente.mkdirs();
-            }
+            // 3. Formatear según estándar FASTA:
+            // Línea 1: >documento|fecha
+            // Línea 2: secuencia
+            String contenidoFasta = ">" + muestra.getDocumentoPaciente() + "|" + muestra.getFecha() + "\n"
+                    + muestra.getSecuencia();
 
-            File archivoMuestra = new File(
-                    carpetaPaciente,
-                    muestra.getFecha() + ".fasta"
-            );
-
-            try (PrintWriter out = new PrintWriter(
-                    new BufferedWriter(
-                            new FileWriter(archivoMuestra)))) {
-
-                out.println(">" + muestra.getDocumentoPaciente() + "|" + muestra.getFecha());
-                out.println(muestra.getSecuencia());
-            }
-
+            // 4. Persistir (DIP)
+            persistencia.guardarLinea(rutaCompleta, contenidoFasta);
             return true;
-
         } catch (IOException e) {
-            e.printStackTrace();
+            // Log de error o manejo de excepción de infraestructura
             return false;
         }
     }
 
-    public void generarDiagnosticoCSV(
-            MuestraADN muestra,
-            List<ResultadoDiagnostico> resultados) {
+    @Override
+    public void generarDiagnosticoCSV(MuestraADN muestra, List<ResultadoDiagnostico> resultados) {
+        String ruta = CARPETA_BASE + muestra.getDocumentoPaciente() + "/diagnostico_" + muestra.getFecha() + ".csv";
 
         try {
-            File carpetaPaciente = new File(CARPETA_BASE + muestra.getDocumentoPaciente());
+            // Escribir cabecera
+            persistencia.guardarLinea(ruta, "virus,posicion_inicio,posicion_fin");
 
-            File archivoCSV = new File(
-                    carpetaPaciente,
-                    "diagnostico_" + muestra.getFecha() + ".csv"
-            );
-
-            try (PrintWriter out = new PrintWriter(
-                    new BufferedWriter(
-                            new FileWriter(archivoCSV)))) {
-
-                out.println("virus,posicion_inicio,posicion_fin");
-
-                for (ResultadoDiagnostico r : resultados) {
-                    out.println(
-                            r.getNombreVirus() + "," +
-                                    r.getPosicionInicio() + "," +
-                                    r.getPosicionFin()
-                    );
-                }
+            // Escribir cada resultado
+            for (ResultadoDiagnostico r : resultados) {
+                String linea = r.getNombreVirus() + "," + r.getPosicionInicio() + "," + r.getPosicionFin();
+                persistencia.guardarLinea(ruta, linea);
             }
-
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private List<String> detectarMutaciones(String actual, String anterior) {
-
-        List<String> rangos = new ArrayList<>();
-
-        int minLength = Math.min(actual.length(), anterior.length());
-
-        int inicio = -1;
-
-        for (int i = 0; i < minLength; i++) {
-
-            if (actual.charAt(i) != anterior.charAt(i)) {
-
-                if (inicio == -1) {
-                    inicio = i;
-                }
-
-            } else {
-
-                if (inicio != -1) {
-                    rangos.add(inicio + "-" + (i - 1));
-                    inicio = -1;
-                }
-            }
-        }
-
-        if (inicio != -1) {
-            rangos.add(inicio + "-" + (minLength - 1));
-        }
-
-        return rangos;
-    }
-
-    private String leerSecuencia(File archivo) {
-
-        try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
-
-            br.readLine(); // Saltar header FASTA
-            return br.readLine();
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        return "";
-    }
-
+    @Override
     public String generarReporteMutaciones(String documento) {
+        String rutaCarpeta = CARPETA_BASE + documento + "/";
 
-        String rutaPaciente = "data/muestras/" + documento;
+        // Obtenemos la lista de archivos FASTA del paciente
+        List<String> archivos = persistencia.listarArchivosEnRuta(rutaCarpeta, ".fasta");
 
-        File carpeta = new File(rutaPaciente);
-
-        if (!carpeta.exists()) {
-            return "[ERROR] No existen muestras para este paciente.";
+        if (archivos.isEmpty()) {
+            return "[ERROR] No existen muestras registradas para este paciente.";
+        }
+        if (archivos.size() < 2) {
+            return "[ERROR] Se requiere al menos dos muestras para generar un comparativo de mutaciones.";
         }
 
-        File[] archivos = carpeta.listFiles(
-                (dir, name) -> name.endsWith(".fasta")
-        );
+        // Ordenamos para asegurar que comparamos cronológicamente (por fecha en el nombre)
+        Collections.sort(archivos);
 
-        if (archivos == null || archivos.length < 2) {
-            return "[ERROR] Se necesitan al menos 2 muestras para comparar.";
+        // La última muestra es la "actual"
+        String rutaActual = rutaCarpeta + archivos.get(archivos.size() - 1);
+        String adnActual = extraerSecuencia(rutaActual);
+
+        List<String> nombresHistorial = new ArrayList<>();
+        List<List<String>> mutacionesPorArchivo = new ArrayList<>();
+
+        // Comparamos la actual contra todas las anteriores
+        for (int i = 0; i < archivos.size() - 1; i++) {
+            String rutaAnterior = rutaCarpeta + archivos.get(i);
+            String adnAnterior = extraerSecuencia(rutaAnterior);
+
+            nombresHistorial.add(archivos.get(i));
+            // Delegamos el algoritmo de comparación al analizador
+            mutacionesPorArchivo.add(analizadorMutaciones.detectarMutaciones(adnActual, adnAnterior));
         }
 
-        Arrays.sort(archivos); // Ordena por nombre (fecha)
-
-        File muestraActualFile = archivos[archivos.length - 1];
-
-        String actual = leerSecuencia(muestraActualFile);
-
-        StringBuilder resultado = new StringBuilder();
-
-        resultado.append("Comparando muestra actual con historial:\n");
-
-        for (int i = 0; i < archivos.length - 1; i++) {
-
-            String anterior = leerSecuencia(archivos[i]);
-
-            List<String> mutaciones = detectarMutaciones(actual, anterior);
-
-            resultado.append("Contra ")
-                    .append(archivos[i].getName())
-                    .append(" -> ");
-
-            if (mutaciones.isEmpty()) {
-                resultado.append("Sin cambios\n");
-            } else {
-                resultado.append("Mutaciones en posiciones: ")
-                        .append(mutaciones)
-                        .append("\n");
-            }
-        }
-
-        return resultado.toString();
+        // Delegamos la construcción del String final al experto en reportes
+        return reporteGenerator.construirInforme(documento, nombresHistorial, mutacionesPorArchivo);
     }
 
+    /**
+     * Método privado para extraer solo la secuencia de un archivo FASTA.
+     */
+    private String extraerSecuencia(String ruta) {
+        try {
+            List<String> lineas = persistencia.leerLineas(ruta);
+            // En un FASTA estándar: línea 0 es el header (>...), línea 1 es la secuencia
+            return (lineas.size() >= 2) ? lineas.get(1) : "";
+        } catch (IOException e) {
+            return "";
+        }
+    }
 }

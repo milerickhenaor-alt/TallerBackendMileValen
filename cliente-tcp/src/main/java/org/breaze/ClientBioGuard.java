@@ -1,11 +1,13 @@
 import java.util.Scanner;
 
+import bussiness.DiskFileLoader;
+import bussiness.IFileLoader;
 import org.breaze.business.Virus;
 import org.breaze.network.IMessageService;
 import org.breaze.network.SSLTCPClient;
 import org.breaze.business.MuestraADN;
 import org.breaze.common.IConfigReader;
-import org.breaze.common.Paciente;
+import org.breaze.business.Paciente;
 import org.breaze.common.PropertiesManager;
 import org.breaze.network.ISSLConfig;
 import org.breaze.network.TCPConfig;
@@ -29,6 +31,8 @@ public class ClientBioGuard {
 
         // Se crea el cliente que enviará los mensajes al servidor
         IMessageService client = new SSLTCPClient(tcpConfig);
+
+        IFileLoader fileLoader = new DiskFileLoader();
 
         // Scanner para leer datos desde consola
         Scanner sc = new Scanner(System.in);
@@ -92,35 +96,40 @@ public class ClientBioGuard {
                     break;
 
                 case 3:
-                    // Registro de virus
-                    System.out.print("Nombre del virus: ");
-                    String NombreVirus = sc.nextLine();
-                    System.out.print("Nivel de infecciocidad: ");
-                    String NivelInfecciocidad = sc.nextLine();
-                    System.out.print("Secuencia Genetica (ATCG): ");
-                    String SecuenciaGenetica = sc.nextLine();
+                    System.out.print("Ruta del archivo FASTA: ");
+                    String ruta = sc.nextLine();
 
-                    Virus v = new Virus(NombreVirus, NivelInfecciocidad, SecuenciaGenetica);
+                    // El cliente usa la interfaz, cumpliendo SOLID
+                    String contenido = fileLoader.load(ruta);
 
-                    mensaje = "REGISTRAR_VIRUS:" + v.toTextLine();
+                    if (!contenido.isEmpty()) {
+                        mensaje = "REGISTRAR_VIRUS:" + contenido;
+                    } else {
+                        System.out.println("[ERROR] El archivo no pudo ser cargado.");
+                        continue;
+                    }
                     break;
 
                 case 4:
-                    // Análisis de ADN
-                    System.out.print("Documento: ");
-                    String docADN = sc.nextLine();
+                    // 1. Pedir el documento del paciente
+                    System.out.print("Ingrese el documento del paciente: ");
+                    String documento = sc.nextLine();
 
-                    System.out.print("Fecha (yyyy-mm-dd): ");
-                    String fecha = sc.nextLine();
+                    // 2. Pedir la ruta del archivo que solo contiene la secuencia ADN
+                    System.out.print("Ingrese la ruta del archivo con la secuencia ADN: ");
+                    String rutaMuestra = sc.nextLine();
 
-                    System.out.print("Secuencia ADN: ");
-                    String secuencia = sc.nextLine();
+                    // 3. Cargar la secuencia desde el archivo
+                    String secuencia = fileLoader.load(rutaMuestra);
 
-                    MuestraADN muestra = new MuestraADN(docADN, fecha, secuencia);
-
-                    mensaje = "ANALIZAR_ADN:" + muestra.toTextLine();
+                    if (!secuencia.isEmpty()) {
+                        // Enviamos el paquete completo al servidor
+                        mensaje = "ANALIZAR_ADN:" + secuencia;
+                    } else {
+                        System.out.println("[ERROR] No se pudo cargar la secuencia.");
+                        continue;
+                    }
                     break;
-
                 case 5:
                     // Solicitud de reporte de pacientes de alto riesgo
                     mensaje = "REPORTE_PACIENTES:";

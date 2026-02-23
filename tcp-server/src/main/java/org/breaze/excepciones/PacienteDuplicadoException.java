@@ -1,4 +1,4 @@
-package org.breaze.business;
+package org.breaze.excepciones;
 
 /**
  * Excepción que se lanza cuando se intenta registrar
